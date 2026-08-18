@@ -23,9 +23,8 @@ from tkinter import messagebox, ttk
 
 from .. import image as img_mod
 from .. import iodd as iodd_mod
+from ..paths import IODD_DIR
 from ..session import SessionError
-
-IODD_DIR = Path(__file__).resolve().parent.parent / "iodd"
 
 class ImagePanel(ttk.Frame):
     def __init__(self, master, app, title=None):

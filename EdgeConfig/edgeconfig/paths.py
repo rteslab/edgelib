@@ -57,3 +57,9 @@ def examples_root(create: bool = True) -> Path:
     except OSError:
         return Path.cwd()
     return root
+
+
+#: IODD 보관 폴더. 동봉본이 여기 설치되고, Browse... 로 고른 파일도 여기 들어온다.
+#: pip 이 root 로 깔기 때문에 그대로 두면 일반 사용자가 쓸 수 없다 —
+#: `install.sh` 가 설치 뒤 이 폴더의 소유자를 바꿔 준다.
+IODD_DIR = Path(__file__).resolve().parent / "iodd"

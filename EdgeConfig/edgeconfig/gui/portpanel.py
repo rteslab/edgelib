@@ -23,13 +23,12 @@ from .. import iodd as iodd_mod
 from .. import session as session_mod
 from ..catalog import Node
 from ..discover import PSI_NAME
+from ..paths import IODD_DIR
 from ..session import SessionError
 
 PORT_MODES = ["DEACTIVATED", "IOL_AUTOSTART", "IOL_MANUAL", "DI_CQ", "DO_CQ"]
 _MODE_VAL = {"DEACTIVATED": 0, "IOL_MANUAL": 1, "IOL_AUTOSTART": 2,
              "DI_CQ": 3, "DO_CQ": 4}
-
-IODD_DIR = Path(__file__).resolve().parent.parent / "iodd"
 
 
 class PortPanel(ttk.Frame):

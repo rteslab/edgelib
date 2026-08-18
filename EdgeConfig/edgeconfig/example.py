@@ -670,7 +670,9 @@ def emit_c(cfg: dict, name: str) -> str:
     groups = _groups(cfg)
     ins = [g for g in groups if g["dir"] == "in"]
     outs = [g for g in groups if g["dir"] == "out"]
-    ports = _pd_ports(cfg)
+    # PORTS[] 는 ISDU 에만 쓰인다. 파이썬 쪽 emit() 과 같은 목록을 써야 한다 —
+    # _pd_ports() 를 주면 SIO 포트까지 물어보고 0x4003 거절이 줄줄이 찍힌다.
+    ports = _isdu_ports(cfg)
 
     isdu = "\n".join('    { 0x%04X, "%s" },' % (i, n) for i, n in ISDU_STD)
     plist = "\n".join("    { %d, %d }," % (nd, pt) for nd, pt in ports)
@@ -929,9 +931,14 @@ def _c_pd(ins: list) -> str:
         tag = f"n{g['node']}_p{g['port']}"
         where = f"node {g['node']} port {g['port']}"
         L.append(f"    /* ---- {where} ---- */")
-        L.append(f'    snprintf(out[at++], LINE_MAX, "  {where}   %s",')
-        L.append(f'             in->{tag}.valid ? "PQ ok"'
-                 f' : "PQ=0 - DO NOT USE THIS CYCLE");')
+        if _has_qual(g):
+            L.append(f'    snprintf(out[at++], LINE_MAX, "  {where}   %s",')
+            L.append(f'             in->{tag}.valid ? "PQ ok"'
+                     f' : "PQ=0 - DO NOT USE THIS CYCLE");')
+        else:
+            # SIO 포트에는 `valid` 가 없다 — codegen 이 만들지 않는다. 여기서
+            # 그대로 찍으면 생성된 예제가 컴파일되지 않는다 (Table E.10 각주 a).
+            L.append(f'    snprintf(out[at++], LINE_MAX, "  {where}");')
         L.append("    c = 0;")
         for nm, e in _fields(g):
             if _is_bool(e):
@@ -1146,8 +1153,11 @@ def _c_main(name: str, outs: list) -> str:
               "    memset(&out, 0, sizeof out);"]
         for g in outs:
             tag = f"n{g['node']}_p{g['port']}"
-            L.append(f"    out.{tag}.enable = false;"
-                     f"      /* <- set true when you mean it */")
+            # SIO 출력에는 `enable` 이 없다 — OE 는 IO-Link 프레임이라 세션이
+            # 없는 포트에는 보낼 상대가 없다 (§11.7.3.2). codegen 과 맞춘다.
+            if _has_qual(g):
+                L.append(f"    out.{tag}.enable = false;"
+                         f"      /* <- set true when you mean it */")
         L.append("    edgex_out_write(bus, &out);")
 
     L += ["",

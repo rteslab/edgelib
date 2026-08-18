@@ -101,11 +101,61 @@ echo "Installing edgelib Python binding..."
 # shellcheck disable=SC2086
 pip install ./python $PIP_FLAGS
 
+# Where the installed package keeps its IODDs. Asked of python rather than
+# guessed, because the path carries the interpreter version.
+iodd_dir() {
+    python3 - <<'PY' 2>/dev/null
+try:
+    import pathlib, edgeconfig
+    print(pathlib.Path(edgeconfig.__file__).resolve().parent / "iodd")
+except Exception:
+    pass
+PY
+}
+
+# **현장에서 붙인 IODD 를 지키고 넘어간다.** Browse... 는 고른 파일을 패키지 안
+# iodd/ 로 들여 놓는데, pip 은 재설치하면서 그 폴더를 통째로 지운다. 빼 두지
+# 않으면 업그레이드할 때마다 현장에서 맞춰 둔 IODD 가 사라진다.
+IODD_SAVE=""
+OLD_IODD=$(iodd_dir)
+if [ -n "$OLD_IODD" ] && [ -d "$OLD_IODD" ]; then
+    IODD_SAVE=$(mktemp -d)
+    cp -a "$OLD_IODD/." "$IODD_SAVE/" 2>/dev/null || true
+fi
+
 echo "Installing EdgeConfig commissioning tool..."
 # --no-deps: pyserial and gpiod came from apt above. Without it pip goes to
 # PyPI, and a machine on a plant network has nowhere to go.
 # shellcheck disable=SC2086
 pip install --no-deps ./EdgeConfig $PIP_FLAGS
+
+echo "Setting up the IODD folder..."
+NEW_IODD=$(iodd_dir)
+if [ -z "$NEW_IODD" ] || [ ! -d "$NEW_IODD" ]; then
+    echo "  ! IODD folder not found - Browse... will not be able to add files"
+else
+    # 빼 두었던 것 중 동봉본에 없는 이름만 되돌린다. 같은 이름이면 새 동봉본이 맞다.
+    if [ -n "$IODD_SAVE" ]; then
+        for f in "$IODD_SAVE"/*.xml "$IODD_SAVE"/*.zip; do
+            [ -f "$f" ] || continue
+            b=$(basename "$f")
+            if [ ! -e "$NEW_IODD/$b" ]; then
+                if cp -a "$f" "$NEW_IODD/$b"; then echo "  kept $b"; fi
+            fi
+        done
+    fi
+    # **소유자를 부른 사람에게 넘긴다.** pip 이 root 로 깔아 두면 GUI 를 일반
+    # 사용자로 띄웠을 때 Browse... 가 여기에 쓰지 못하고, 대화상자가 뜨기도 전에
+    # PermissionError 로 죽는다.
+    if [ -n "$SUDO_USER" ]; then
+        if chown -R "$SUDO_USER" "$NEW_IODD"; then
+            echo "  $NEW_IODD: owned by $SUDO_USER"
+        fi
+    fi
+    chmod -R u+rwX "$NEW_IODD"
+    echo "  $(find "$NEW_IODD" -maxdepth 1 \( -name '*.xml' -o -name '*.zip' \) | wc -l) IODD file(s)"
+fi
+if [ -n "$IODD_SAVE" ]; then rm -rf "$IODD_SAVE"; fi
 
 echo "Cleaning build artifacts..."
 rm -rf ./python/build ./python/*.egg-info ./EdgeConfig/build ./EdgeConfig/*.egg-info
