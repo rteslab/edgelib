@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edgeconfig"
+version = "0.1.0"
+description = "EdgeX slice I/O commissioning tool"
+requires-python = ">=3.8"
+license = { text = "Proprietary" }
+dependencies = ["pyserial>=3.5", "gpiod>=2.0"]
+
+[project.scripts]
+edgeconfig = "edgeconfig.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["edgeconfig*"]
