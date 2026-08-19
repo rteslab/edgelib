@@ -567,46 +567,59 @@ def read_parameters_once(bus):
 
 # ── 포트 설정 적용 ──────────────────────────────────────────────────────────
 def _apply_configs() -> str:
-    """포트 설정을 모듈에 밀어 넣는다. `PORT_CONFIGS` 는 커미셔닝 시점에 굳어 있다."""
-    return '''def apply_port_configs(bus):
+    """포트 설정을 모듈에 밀어 넣는다. **자기 bus 를 열어 쓴다** — `EdgeBus(CONFIG_PATH)`
+    가 열릴 수 있는 상태를 만드는 것이 목적이라, 그 함수를 부르기 전에 도는 것이다."""
+    return '''def apply_port_configs():
     """Push what CONFIG says each port should be.
 
-    **Ports come up DEACTIVATED after power-up.** The module keeps no record
-    of what device you meant to plug where until a master writes the port
-    configuration. Without this step the bus goes to RUN but every port stays
-    silent, and section 4 (ISDU) fails with DEVICE_NOT_ACCESSIBLE for
-    everything - the failure mode the user hit after every reboot.
+    **Ports come up DEACTIVATED after power-up.** `EdgeBus(CONFIG_PATH)` then
+    fails at open with "port N has PD 0/0 but the config says X/Y" before
+    the application can do anything - a chicken-and-egg. So we open once
+    without a config (autoscan mode, which skips PD verification), push
+    each JSON port configuration, wait, close. The next open with the
+    config finds the layout it expects.
 
-    The GUI `Apply port mode` button does this for one port at a time; here
-    we walk every port from the config. Safe to re-run - writing the same
-    config again just restarts the port.
+    Do this on every start, not only after boot. Writing the same config
+    again just restarts the port - the module treats it as idempotent.
+
+    The GUI `Apply port mode` button does the same for one port at a time.
     """
     print("")
     print("=" * 72)
     print("3. apply port configurations")
     print("=" * 72)
-    for node, port, mode, val, iq, ct, vid, did in PORT_CONFIGS:
-        try:
-            bus.iol_port_configuration(node, port, PortConfig(
-                mode=mode, validation=val, iq_behavior=iq, cycletime=ct,
-                vendor_id=vid, device_id=did))
-            print("  node %d port %d  %-14s OK" % (node, port, mode.name))
-        except EdgeError as e:
-            print("  node %d port %d  %-14s failed: %s"
-                  % (node, port, mode.name, e))
+    with EdgeBus() as bus:                # autoscan: no PD verification
+        for node, port, mode, val, iq, ct, vid, did in PORT_CONFIGS:
+            try:
+                bus.iol_port_configuration(node, port, PortConfig(
+                    mode=mode, validation=val, iq_behavior=iq, cycletime=ct,
+                    vendor_id=vid, device_id=did))
+                print("  node %d port %d  %-14s OK" % (node, port, mode.name))
+            except EdgeError as e:
+                print("  node %d port %d  %-14s failed: %s"
+                      % (node, port, mode.name, e))
 
-    # **Give ports a moment to restart.** iol_port_configuration triggers a
-    # port restart on the module - wake up, read Device identity, run the
-    # compatibility check. Asking for status inside that window still reports
-    # DEACTIVATED. Two seconds covers the slow devices we have seen.
-    print("  waiting for ports to settle...")
-    time.sleep(2.0)'''
+        # **Give ports a moment to restart.** iol_port_configuration triggers
+        # a port restart on the module - wake up, read Device identity, run
+        # the compatibility check. Asking for status inside that window still
+        # reports DEACTIVATED. Two seconds covers the slow devices we have
+        # seen. Closing this bus does not undo the config - the module keeps
+        # it in RAM until the next power cycle.
+        print("  waiting for ports to settle...")
+        time.sleep(2.0)'''
 
 
 # ── main ────────────────────────────────────────────────────────────────────
 def _main(outs: list, do_cq: list) -> str:
     L = ['''def main():
     seconds = int(sys.argv[1]) if len(sys.argv) > 1 else 60
+
+    # **Apply the port configurations first, on a separate autoscan bus.**
+    # After a reboot every port is DEACTIVATED; EdgeBus(CONFIG_PATH) below
+    # verifies PD sizes at open and would refuse to open before we could
+    # tell each port what to be. Doing this here matches the "click Apply
+    # port mode in the GUI, then run" flow the user would do by hand.
+    apply_port_configs()
 
     # Opening the bus reads the config, claims the serial port and GPIO, starts
     # the background thread and runs the STARTUP scan. It verifies that what is
@@ -616,7 +629,6 @@ def _main(outs: list, do_cq: list) -> str:
     # **Always close it.** `with` guarantees that even when you raise.
     with EdgeBus(CONFIG_PATH) as bus:
         survey(bus)
-        apply_port_configs(bus)
         read_parameters_once(bus)
 
         print("")
@@ -1450,24 +1462,36 @@ static void read_parameters_once(edgelib_t *bus)
 
 
 def _c_apply_configs() -> str:
-    """PORT_CONFIGS 를 모듈에 보낸다. 파이썬 예제의 apply_port_configs() 와 짝."""
+    """PORT_CONFIGS 를 모듈에 보낸다. **자기 bus 를 열어 쓴다** — main 의
+    `edgelib_open(config_path())` 가 열릴 수 있는 상태를 만드는 것이 목적이라,
+    그것 전에 도는 것이다. 파이썬 예제의 apply_port_configs() 와 짝."""
     return '''/* ---- apply port configurations ---------------------------------------- */
 /* Push what CONFIG says each port should be.
 
-   **Ports come up DEACTIVATED after power-up.** The module keeps no record of
-   what device you meant to plug where until a master writes the port
-   configuration. Without this step the bus goes to RUN but every port stays
-   silent, and section 4 (ISDU) fails with DEVICE_NOT_ACCESSIBLE for everything -
-   the failure mode the user hit after every reboot.
+   **Ports come up DEACTIVATED after power-up.** edgelib_open(CONFIG) then
+   fails at open with "port N has PD 0/0 but the config says X/Y" before the
+   application can do anything - a chicken-and-egg. So we open once without a
+   config (autoscan mode, which skips PD verification), push each JSON port
+   configuration, wait, close. The next open with the config finds the layout
+   it expects.
 
-   The GUI `Apply port mode` button does this for one port at a time; here we
-   walk every port from the config. Safe to re-run - writing the same config
-   again just restarts the port. */
-static void apply_port_configs(edgelib_t *bus)
+   Do this on every start, not only after boot. Writing the same config again
+   just restarts the port - the module treats it as idempotent.
+
+   The GUI `Apply port mode` button does the same for one port at a time. */
+static void apply_port_configs(void)
 {
     printf("\\n========================================================\\n");
     printf("3. apply port configurations\\n");
     printf("========================================================\\n");
+
+    edgelib_t *bus = edgelib_open(NULL);        /* autoscan: no PD verify */
+    if (bus == NULL) {
+        fprintf(stderr, "  ! cannot open the bus to apply port configs: %s\\n",
+                edgelib_last_error(NULL));
+        return;
+    }
+
     for (int i = 0; i < PORT_CFG_COUNT; i++) {
         const edge_port_cfg_t cfg = {
             .mode        = PORT_CONFIGS[i].mode,
@@ -1490,12 +1514,17 @@ static void apply_port_configs(edgelib_t *bus)
                    edgelib_error_msg(rc));
         }
     }
+
     /* **Give ports a moment to restart.** iol_port_configuration triggers a
        port restart on the module - wake up, read Device identity, run the
        compatibility check. Asking for status inside that window still reports
-       DEACTIVATED. Two seconds covers the slow devices we have seen. */
+       DEACTIVATED. Two seconds covers the slow devices we have seen. Closing
+       the bus does not undo the config - the module keeps it in RAM until
+       the next power cycle. */
     printf("  waiting for ports to settle...\\n");
     sleep(2);
+
+    edgelib_close(bus);
 }'''
 
 
@@ -1505,6 +1534,14 @@ def _c_main(name: str, outs: list, do_cq: list) -> str:
          "int main(int argc, char **argv)",
          "{",
          "    const int seconds = (argc > 1) ? atoi(argv[1]) : 60;",
+         "",
+         "    /* **Apply the port configurations first, on a separate autoscan bus.**",
+         "       After a reboot every port is DEACTIVATED; the open below verifies PD",
+         "       sizes at open and would refuse before we could tell each port what to",
+         "       be. This matches the \"click Apply port mode in the GUI, then run\" flow",
+         "       the user would do by hand. Runs on every start - the module treats",
+         "       repeated writes as idempotent. */",
+         "    apply_port_configs();",
          "",
          "    /* Opening the bus reads the config, claims the serial port and GPIO,",
          "       starts the background thread and runs the STARTUP scan. It checks",
@@ -1521,7 +1558,6 @@ def _c_main(name: str, outs: list, do_cq: list) -> str:
          "    signal(SIGINT, on_sigint);",
          "",
          "    survey(bus);",
-         "    apply_port_configs(bus);",
          "    read_parameters_once(bus);",
          "",
          '    printf("\\n========================================================\\n");',
