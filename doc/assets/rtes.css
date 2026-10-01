@@ -1,0 +1,24 @@
+.md-typeset { word-break: keep-all; line-height: 1.75; }
+.md-typeset table:not([class]) { font-size: .74rem; }
+.md-typeset table:not([class]) th { white-space: nowrap; }
+.md-typeset img { border: 1px solid var(--md-default-fg-color--lightest);
+                  border-radius: 6px; }
+.md-typeset h2 { margin-top: 2em; }
+
+/* 회사 표시는 오른쪽 끝에. 왼쪽 자리는 제품 아이콘과 제목의 것이다. */
+.md-header__inner::after {
+  content: ""; flex: 0 0 auto; margin-left: .6rem; width: 4.4rem; height: 1.5rem;
+  background: url("images/rtes_logo.png") center/contain no-repeat;
+  /* 남색 띠 위라 원본 색으로는 읽히지 않는다 — 흰 실루엣으로 눕힌다 */
+  filter: brightness(0) invert(1); opacity: .95;
+}
+.md-header__title { margin-right: auto; }
+
+/* 왼쪽 칸은 얼개만 — 두 단(1. · 1.1)이라 큰 항목이 바로 눈에 들어와야 한다. */
+.md-nav--primary > .md-nav__list > .md-nav__item > .md-nav__link { font-weight: 700; }
+
+/* 넓은 화면에서는 사이드바 제목을 지운다 — 바로 아래 문서 이름과 같은 말이
+   두 번 나온다. 좁은 화면에서는 서랍의 머리글이라 그대로 둔다. */
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary > .md-nav__title { display: none; }
+}

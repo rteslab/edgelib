@@ -1,0 +1,5 @@
+# The distribution runs on Linux. A Windows checkout that turns these back into
+# CRLF makes install.sh die with `$'\r': command not found`.
+* text=auto eol=lf
+*.png binary
+*.zip binary

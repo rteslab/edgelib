@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edgelib"
+version = "0.1.0"
+description = "EdgeX Slice I/O backplane master (ctypes binding for libedgelib.so)"
+requires-python = ">=3.9"
+authors = [{ name = "RTES Co., Ltd." }]
+
+[tool.setuptools]
+packages = ["edgelib"]
